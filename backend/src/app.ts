@@ -4,10 +4,13 @@ import helmet from 'helmet';
 import compression from 'compression';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
+import http from 'http';
+import { Server } from 'socket.io';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './utils/logger';
 import recipeRoutes from './routes/recipeRoutes';
 import feedbackRoutes from './routes/feedbackRoutes';
+import { setupWebSocket } from './services/websocketService';
 
 dotenv.config();
 
@@ -45,7 +48,17 @@ const connectDB = async () => {
 const startServer = async () => {
   await connectDB();
   
-  app.listen(PORT, () => {
+  const server = http.createServer(app);
+  const io = new Server(server, {
+    cors: {
+      origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+      credentials: true,
+    },
+  });
+
+  setupWebSocket(io);
+  
+  server.listen(PORT, () => {
     logger.info(`Server is running on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV}`);
   });

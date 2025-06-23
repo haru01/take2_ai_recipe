@@ -48,6 +48,41 @@ export class LLMService {
     });
   }
 
+  async generateRecipeStream(
+    prompt: string, 
+    onChunk: (content: string) => void,
+    options?: LLMGenerationOptions
+  ): Promise<void> {
+    try {
+      logger.info('Starting streaming recipe generation', { 
+        promptLength: prompt.length,
+        options 
+      });
+
+      const stream = await this.ollama.generate({
+        model: 'llama3.1:8b',
+        prompt,
+        options: {
+          temperature: options?.temperature || 0.7,
+          top_p: options?.topP || 0.9,
+          num_predict: options?.maxTokens || 1500,
+        },
+        stream: true,
+      });
+
+      for await (const chunk of stream) {
+        if (chunk.response) {
+          onChunk(chunk.response);
+        }
+      }
+
+      logger.info('LLM streaming generation completed');
+    } catch (error) {
+      logger.error('LLM streaming generation error:', error);
+      throw new Error(`ストリーミング生成に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   async checkModelAvailability(): Promise<boolean> {
     try {
       const models = await this.ollama.list();
