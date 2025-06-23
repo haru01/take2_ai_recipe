@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { RecipeInput } from './components/RecipeInput/RecipeInput';
+import { StreamingRecipeInput } from './components/RecipeInput/StreamingRecipeInput';
 import { RecipeSelection } from './components/RecipeSelection/RecipeSelection';
 import { RecipeDetail } from './components/RecipeDetail/RecipeDetail';
 import { Feedback } from './components/Feedback/Feedback';
@@ -11,10 +12,18 @@ type AppStep = 'input' | 'detail' | 'feedback';
 function App() {
   const [currentStep, setCurrentStep] = useState<AppStep>('input');
   const [showRecipes, setShowRecipes] = useState(false);
+  const [useStreaming, setUseStreaming] = useState(true); // ストリーミング機能の切り替え
+  const [streamingRecipes, setStreamingRecipes] = useState<Recipe[]>([]);
   const { recipes, selectedRecipe, recipeDetail, loading, error, clearState } = useRecipeStore();
 
   const handleRecipeInputSubmit = () => {
     console.log('handleRecipeInputSubmit called, recipes:', recipes);
+    setShowRecipes(true);
+  };
+
+  const handleStreamingRecipesGenerated = (generatedRecipes: Recipe[]) => {
+    console.log('Streaming recipes generated:', generatedRecipes);
+    setStreamingRecipes(generatedRecipes);
     setShowRecipes(true);
   };
 
@@ -39,6 +48,7 @@ function App() {
   const handleStartOver = () => {
     setCurrentStep('input');
     setShowRecipes(false);
+    setStreamingRecipes([]);
     clearState();
   };
 
@@ -46,12 +56,29 @@ function App() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 py-6">
-          <h1 className="text-3xl font-bold text-gray-900">
-            AI Recipe Generator
-          </h1>
-          <p className="text-gray-600 mt-2">
-            AIが提案する3つのレシピから、お気に入りを見つけましょう
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                AI Recipe Generator
+              </h1>
+              <p className="text-gray-600 mt-2">
+                AIが提案する3つのレシピから、お気に入りを見つけましょう
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">ストリーミング:</span>
+              <button
+                onClick={() => setUseStreaming(!useStreaming)}
+                className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                  useStreaming 
+                    ? 'bg-green-500 text-white' 
+                    : 'bg-gray-300 text-gray-700'
+                }`}
+              >
+                {useStreaming ? 'ON' : 'OFF'}
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -62,9 +89,13 @@ function App() {
           </div>
         )}
 
-        {/* 常に入力フォームを表示 */}
+        {/* 入力フォーム（ストリーミング切り替え対応） */}
         {currentStep === 'input' && (
-          <RecipeInput onSubmit={handleRecipeInputSubmit} />
+          useStreaming ? (
+            <StreamingRecipeInput onRecipesGenerated={handleStreamingRecipesGenerated} />
+          ) : (
+            <RecipeInput onSubmit={handleRecipeInputSubmit} />
+          )
         )}
 
         {/* ローディング表示 */}
@@ -76,12 +107,13 @@ function App() {
         )}
 
         {/* レシピ選択を入力フォームの下に表示 */}
-        {!loading && showRecipes && recipes.length > 0 && currentStep === 'input' && (
+        {!loading && showRecipes && currentStep === 'input' && (
           <div id="recipe-results" className="mt-12">
             <RecipeSelection
-              recipes={recipes}
+              recipes={useStreaming ? streamingRecipes : recipes}
               onSelect={handleRecipeSelect}
               onStartOver={handleStartOver}
+              isStreamingMode={useStreaming}
             />
           </div>
         )}

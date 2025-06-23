@@ -6,6 +6,7 @@ interface Props {
   recipes: Recipe[];
   onSelect: (recipe: Recipe) => void;
   onStartOver: () => void;
+  isStreamingMode?: boolean;
 }
 
 const agentTypeLabels = {
@@ -26,10 +27,14 @@ const agentTypeColors = {
   healthy: 'bg-green-50 border-green-200 text-green-800'
 };
 
-export const RecipeSelection: React.FC<Props> = ({ recipes, onSelect, onStartOver }) => {
-  const { setSelectedRecipe } = useRecipeStore();
+export const RecipeSelection: React.FC<Props> = ({ recipes, onSelect, onStartOver, isStreamingMode = false }) => {
+  const { setSelectedRecipe, setRecipes } = useRecipeStore();
 
   const handleSelect = (recipe: Recipe) => {
+    // ストリーミングモードの場合、Zustandストアにレシピリストも設定
+    if (isStreamingMode) {
+      setRecipes(recipes);
+    }
     setSelectedRecipe(recipe);
     onSelect(recipe);
   };
