@@ -70,6 +70,10 @@ const NutritionInfoSchema = new Schema<INutritionInfo>({
 });
 
 const RecipeSchema = new Schema<IRecipe>({
+  _id: {
+    type: String,
+    required: true,
+  },
   agentType: {
     type: String,
     enum: ['classic', 'fusion', 'healthy'],

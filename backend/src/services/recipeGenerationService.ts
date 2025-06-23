@@ -36,7 +36,15 @@ export class RecipeGenerationService {
             const parsed = LLMResponseParser.parseRecipeResponse(response.value);
             
             if (LLMResponseParser.validateRecipeData(parsed)) {
-              const recipe: Recipe = {
+              // 完全なレシピデータを作成
+              const sanitizedIngredients = (parsed.ingredients || []).map((ing: any) => ({
+                name: ing.name || '材料',
+                amount: ing.amount || '適量',
+                unit: ing.unit || '適量',
+                notes: ing.notes || ''
+              }));
+
+              const recipeDetail: RecipeDetail = {
                 id: `recipe-${Date.now()}-${i}`,
                 agentType,
                 title: parsed.title || `${agentType}シェフのレシピ`,
@@ -44,11 +52,45 @@ export class RecipeGenerationService {
                 cookingTime: parsed.cookingTime || 30,
                 mainIngredients: parsed.mainIngredients || ['材料1', '材料2', '材料3'],
                 features: parsed.features || ['美味しい', '簡単', '栄養満点'],
+                ingredients: sanitizedIngredients.length > 0 ? sanitizedIngredients : [
+                  { name: '基本材料', amount: '適量', unit: '適量', notes: 'レシピに応じて準備してください' }
+                ],
+                steps: parsed.steps || [
+                  { stepNumber: 1, instruction: '材料を準備します。', duration: 5 },
+                  { stepNumber: 2, instruction: '調理を開始します。', duration: 25 }
+                ],
+                nutritionInfo: parsed.nutritionInfo || {
+                  calories: 300,
+                  protein: 15,
+                  carbs: 30,
+                  fat: 10,
+                  fiber: 5,
+                  sodium: 800,
+                },
+                tips: parsed.tips || ['お好みで調味料を調整してください'],
+                servings: parsed.servings || 4,
+                prepTime: parsed.prepTime || 15,
+                totalTime: parsed.totalTime || parsed.cookingTime || 30,
                 imageUrl: parsed.imageUrl,
+              };
+
+              // MongoDBに保存
+              await this.saveRecipeToDatabase(recipeDetail);
+
+              // APIレスポンス用の簡略化されたレシピ
+              const recipe: Recipe = {
+                id: recipeDetail.id,
+                agentType: recipeDetail.agentType,
+                title: recipeDetail.title,
+                description: recipeDetail.description,
+                cookingTime: recipeDetail.cookingTime,
+                mainIngredients: recipeDetail.mainIngredients,
+                features: recipeDetail.features,
+                imageUrl: recipeDetail.imageUrl,
               };
               
               recipes.push(recipe);
-              logger.info(`Successfully generated ${agentType} recipe: ${recipe.title}`);
+              logger.info(`Successfully generated and saved ${agentType} recipe: ${recipe.title}`);
             } else {
               logger.warn(`Invalid recipe data from ${agentType} agent, using fallback`);
               // フォールバックレシピを追加
@@ -84,60 +126,6 @@ export class RecipeGenerationService {
     }
   }
 
-  async generateRecipeDetail(recipeId: string, title: string, agentType: AgentType): Promise<RecipeDetail> {
-    try {
-      logger.info('Generating detailed recipe', { recipeId, title, agentType });
-
-      const prompt = this.promptService.generateDetailedRecipePrompt(title, agentType);
-      const response = await this.llmService.generateRecipeDetail(prompt);
-      const parsed = LLMResponseParser.parseRecipeResponse(response);
-
-      // ingredients データの検証・補完
-      const sanitizedIngredients = (parsed.ingredients || []).map((ing: any) => ({
-        name: ing.name || '材料',
-        amount: ing.amount || '適量',
-        unit: ing.unit || '適量',
-        notes: ing.notes || ''
-      }));
-
-      const recipeDetail: RecipeDetail = {
-        id: recipeId,
-        agentType,
-        title,
-        description: parsed.description || `${title}の詳細レシピです。`,
-        cookingTime: parsed.totalTime || parsed.cookingTime || 30,
-        mainIngredients: sanitizedIngredients.slice(0, 3).map((ing: any) => ing.name) || [title],
-        features: parsed.features || ['手作り', '栄養満点', '美味しい'],
-        ingredients: sanitizedIngredients.length > 0 ? sanitizedIngredients : [
-          { name: '基本材料', amount: '適量', unit: '適量', notes: 'レシピに応じて準備してください' }
-        ],
-        steps: parsed.steps || [
-          { stepNumber: 1, instruction: '材料を準備します。', duration: 5 },
-          { stepNumber: 2, instruction: '調理を開始します。', duration: 25 }
-        ],
-        nutritionInfo: parsed.nutritionInfo || {
-          calories: 300,
-          protein: 15,
-          carbs: 30,
-          fat: 10,
-          fiber: 5,
-          sodium: 800,
-        },
-        tips: parsed.tips || ['お好みで調味料を調整してください'],
-        servings: parsed.servings || 4,
-        prepTime: parsed.prepTime || 15,
-        totalTime: parsed.totalTime || parsed.cookingTime || 30,
-      };
-
-      await this.saveRecipeToDatabase(recipeDetail);
-
-      logger.info('Successfully generated detailed recipe', { recipeId });
-      return recipeDetail;
-    } catch (error) {
-      logger.error('Failed to generate recipe detail:', error);
-      throw error instanceof Error ? error : createError('詳細レシピの生成に失敗しました', 500);
-    }
-  }
 
   private async saveRecipeToDatabase(recipeDetail: RecipeDetail): Promise<void> {
     try {
@@ -148,6 +136,7 @@ export class RecipeGenerationService {
       }));
 
       const recipeDoc = new RecipeModel({
+        _id: recipeDetail.id,
         agentType: recipeDetail.agentType,
         title: recipeDetail.title,
         description: recipeDetail.description,

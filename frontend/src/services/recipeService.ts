@@ -34,16 +34,17 @@ export class RecipeService {
     }
   }
 
-  async getRecipeDetail(
-    id: string, 
-    title?: string, 
-    agentType?: 'classic' | 'fusion' | 'healthy'
-  ): Promise<RecipeDetail> {
-    const params: { title?: string; agentType?: string } = {};
-    if (title) params.title = title;
-    if (agentType) params.agentType = agentType;
-
-    return apiService.get<RecipeDetail>(`/api/recipes/${id}`, params);
+  async getRecipeDetail(id: string): Promise<RecipeDetail> {
+    console.log('RecipeService: Getting recipe detail for ID:', id);
+    
+    try {
+      const result = await apiService.get<RecipeDetail>(`/api/recipes/${id}`);
+      console.log('RecipeService: Recipe detail retrieved:', result);
+      return result;
+    } catch (error) {
+      console.error('RecipeService: Failed to get recipe detail:', error);
+      throw error;
+    }
   }
 
   async submitFeedback(feedback: Feedback): Promise<{ id: string }> {

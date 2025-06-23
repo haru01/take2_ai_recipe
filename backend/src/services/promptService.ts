@@ -42,20 +42,32 @@ export class PromptService {
 - 避けたい食材: ${input.avoidIngredients || 'なし'}
 - 重視ポイント: ${this.getPriorityText(input.priority)}
 
-以下のJSON形式で厳密に回答してください：
+以下のJSON形式で完全なレシピを回答してください：
 {
   "title": "料理名",
-  "description": "料理の説明を2-3文で書いてください。必ず値を入れてください。",
+  "description": "料理の説明を2-3文で書いてください",
   "cookingTime": 30,
+  "prepTime": 15,
+  "totalTime": 45,
+  "servings": 4,
   "mainIngredients": ["主要材料1", "主要材料2", "主要材料3"],
-  "features": ["特徴1", "特徴2", "特徴3"]
+  "features": ["特徴1", "特徴2", "特徴3"],
+  "ingredients": [
+    {"name": "材料名", "amount": "分量", "unit": "単位", "notes": "備考（任意）"}
+  ],
+  "steps": [
+    {"stepNumber": 1, "instruction": "手順の説明", "duration": 5, "temperature": "温度（任意）", "tips": "コツ（任意）"}
+  ],
+  "nutritionInfo": {
+    "calories": 300, "protein": 15, "carbs": 30, "fat": 10, "fiber": 5, "sodium": 800
+  },
+  "tips": ["調理のコツ1", "調理のコツ2"]
 }
 
 重要事項：
-1. descriptionは必須です。空文字列にしないでください。
-2. cookingTimeは数値で入力してください（例: 30）
-3. 配列は最低3つの要素を含めてください
-4. JSON以外の文章は一切含めないでください`;
+1. すべてのフィールドに適切な値を入れてください
+2. ingredientsは最低5つ、stepsは最低3つ含めてください
+3. JSON以外の文章は一切含めないでください`;
   }
 
   generateFusionChefPrompt(input: RecipeInput): string {
@@ -76,17 +88,29 @@ export class PromptService {
 以下のJSON形式で厳密に回答してください：
 {
   "title": "料理名",
-  "description": "料理の説明を2-3文で独創性を強調して書いてください。必ず値を入れてください。",
+  "description": "料理の説明を2-3文で独創性を強調して書いてください",
   "cookingTime": 30,
+  "prepTime": 15,
+  "totalTime": 45,
+  "servings": 4,
   "mainIngredients": ["主要材料1", "主要材料2", "主要材料3"],
-  "features": ["特徴1", "特徴2", "特徴3"]
+  "features": ["特徴1", "特徴2", "特徴3"],
+  "ingredients": [
+    {"name": "材料名", "amount": "分量", "unit": "単位", "notes": "備考（任意）"}
+  ],
+  "steps": [
+    {"stepNumber": 1, "instruction": "手順の説明", "duration": 5, "temperature": "温度（任意）", "tips": "コツ（任意）"}
+  ],
+  "nutritionInfo": {
+    "calories": 300, "protein": 15, "carbs": 30, "fat": 10, "fiber": 5, "sodium": 800
+  },
+  "tips": ["調理のコツ1", "調理のコツ2"]
 }
 
 重要事項：
-1. descriptionは必須です。空文字列にしないでください。
-2. cookingTimeは数値で入力してください（例: 30）
-3. 配列は最低3つの要素を含めてください
-4. JSON以外の文章は一切含めないでください`;
+1. すべてのフィールドに適切な値を入れてください
+2. ingredientsは最低5つ、stepsは最低3つ含めてください
+3. JSON以外の文章は一切含めないでください`;
   }
 
   generateHealthyChefPrompt(input: RecipeInput): string {
@@ -107,63 +131,31 @@ export class PromptService {
 以下のJSON形式で厳密に回答してください：
 {
   "title": "料理名",
-  "description": "料理の説明を2-3文で健康効果を含めて書いてください。必ず値を入れてください。",
+  "description": "料理の説明を2-3文で健康効果を含めて書いてください",
   "cookingTime": 30,
+  "prepTime": 15,
+  "totalTime": 45,
+  "servings": 4,
   "mainIngredients": ["主要材料1", "主要材料2", "主要材料3"],
-  "features": ["特徴1", "特徴2", "特徴3"]
+  "features": ["特徴1", "特徴2", "特徴3"],
+  "ingredients": [
+    {"name": "材料名", "amount": "分量", "unit": "単位", "notes": "備考（任意）"}
+  ],
+  "steps": [
+    {"stepNumber": 1, "instruction": "手順の説明", "duration": 5, "temperature": "温度（任意）", "tips": "コツ（任意）"}
+  ],
+  "nutritionInfo": {
+    "calories": 300, "protein": 15, "carbs": 30, "fat": 10, "fiber": 5, "sodium": 800
+  },
+  "tips": ["調理のコツ1", "調理のコツ2"]
 }
 
 重要事項：
-1. descriptionは必須です。空文字列にしないでください。
-2. cookingTimeは数値で入力してください（例: 30）
-3. 配列は最低3つの要素を含めてください
-4. JSON以外の文章は一切含めないでください`;
+1. すべてのフィールドに適切な値を入れてください
+2. ingredientsは最低5つ、stepsは最低3つ含めてください
+3. JSON以外の文章は一切含めないでください`;
   }
 
-  generateDetailedRecipePrompt(title: string, agentType: AgentType): string {
-    const agentContext = {
-      classic: '伝統的で家庭的な調理法を重視し、',
-      fusion: '創造的で革新的な調理技術を活用し、',
-      healthy: '栄養価を最大化する調理法を選択し、'
-    };
-
-    return `「${title}」の詳細なレシピを作成してください。${agentContext[agentType]}誰でも作れるよう丁寧に説明してください。
-
-以下のJSON形式で厳密に回答してください：
-{
-  "ingredients": [
-    {
-      "name": "食材名",
-      "amount": "分量",
-      "unit": "単位",
-      "notes": "備考（任意）"
-    }
-  ],
-  "steps": [
-    {
-      "stepNumber": 1,
-      "instruction": "具体的な手順",
-      "duration": 時間（分、任意）,
-      "temperature": "温度（任意）",
-      "tips": "コツ（任意）"
-    }
-  ],
-  "nutritionInfo": {
-    "calories": カロリー,
-    "protein": タンパク質（g）,
-    "carbs": 炭水化物（g）,
-    "fat": 脂質（g）,
-    "fiber": 食物繊維（g）,
-    "sodium": 塩分（mg）
-  },
-  "tips": ["調理のコツ1", "調理のコツ2"],
-  "servings": 人分,
-  "prepTime": 準備時間（分）,
-  "totalTime": 総調理時間（分）
-}
-
-**重要: 必ず有効なJSON形式のみで回答してください。説明文は含めず、JSON以外の文字は一切出力しないでください。**`;
-  }
 
   getPromptByAgentType(agentType: AgentType, input: RecipeInput): string {
     switch (agentType) {

@@ -21,7 +21,7 @@ export const RecipeDetail: React.FC<Props> = ({
 
   useEffect(() => {
     if (recipe) {
-      loadRecipeDetail(recipe.id, recipe.title, recipe.agentType);
+      loadRecipeDetail(recipe.id);
     }
   }, [recipe, loadRecipeDetail]);
 

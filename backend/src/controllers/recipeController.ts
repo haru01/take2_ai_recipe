@@ -53,27 +53,23 @@ export class RecipeController {
   getRecipeDetail = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
-      const { title, agentType } = req.query;
 
       if (!id) {
         throw createError('レシピIDが必要です', 400);
       }
 
-      let recipeDetail;
+      logger.info('Recipe detail request received', { id });
 
-      if (title && agentType) {
-        recipeDetail = await this.recipeGenerationService.generateRecipeDetail(
-          id,
-          title as string,
-          agentType as 'classic' | 'fusion' | 'healthy'
-        );
-      } else {
-        recipeDetail = await this.recipeGenerationService.getRecipeById(id);
-      }
+      const recipeDetail = await this.recipeGenerationService.getRecipeById(id);
 
       if (!recipeDetail) {
         throw createError('レシピが見つかりません', 404);
       }
+
+      logger.info('Recipe detail retrieved successfully', { 
+        id, 
+        title: recipeDetail.title 
+      });
 
       const response: ApiResponse<typeof recipeDetail> = {
         success: true,
@@ -82,6 +78,7 @@ export class RecipeController {
 
       res.json(response);
     } catch (error) {
+      logger.error('Failed to get recipe detail', { error, id: req.params.id });
       next(error);
     }
   };

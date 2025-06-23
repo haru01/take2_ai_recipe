@@ -13,17 +13,13 @@ export const useRecipeDetail = () => {
     setError 
   } = useRecipeStore();
 
-  const loadRecipeDetail = useCallback(async (
-    id: string, 
-    title?: string, 
-    agentType?: AgentType
-  ) => {
+  const loadRecipeDetail = useCallback(async (id: string) => {
     setLoading(true);
     setError(null);
 
     try {
-      console.log('Loading recipe detail:', { id, title, agentType });
-      const result = await recipeService.getRecipeDetail(id, title, agentType);
+      console.log('Loading recipe detail:', { id });
+      const result = await recipeService.getRecipeDetail(id);
       console.log('Loaded recipe detail:', result);
       
       setRecipeDetail(result);
