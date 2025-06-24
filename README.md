@@ -46,46 +46,48 @@ Llama 3.1:8b を使用した料理レシピ生成システム
 ## セットアップ
 
 ### 前提条件
-- Docker & Docker Compose
-- Node.js 18+ (ローカル開発の場合)
+- Node.js 18+
+- MongoDB (ローカルまたはクラウド)
+- Ollama (Llama 3.1:8b)
 
-### Docker Compose を使用した起動
+### セットアップ手順
 
+#### 1. Ollama のセットアップ
 ```bash
-# リポジトリをクローン
-git clone <repository-url>
-cd take2_ai_recipe
-
-# Docker Compose で全サービス起動
-docker-compose up -d
-
-# ログを確認
-docker-compose logs -f
+# Ollama をインストール（https://ollama.ai/）
+# Llama 3.1:8b モデルをダウンロード
+ollama pull llama3.1:8b
 ```
 
-### サービスアクセス
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:4000
-- MongoDB: localhost:27017
-- Ollama: http://localhost:11434
-
-### ローカル開発
-
-#### Backend
+#### 2. MongoDB のセットアップ
 ```bash
+# MongoDB をローカルにインストールまたは MongoDB Atlas を使用
+# ローカルの場合：
+brew install mongodb/brew/mongodb-community
+brew services start mongodb-community
+```
+
+#### 3. アプリケーションの起動
+
+```bash
+# Backend の起動
 cd backend
 npm install
 cp .env.example .env
+# .env ファイルを編集して設定を調整
 npm run dev
-```
 
-#### Frontend
-```bash
+# 別のターミナルで Frontend の起動
 cd frontend
 npm install
 cp .env.example .env
+# .env ファイルを編集して設定を調整
 npm run dev
 ```
+
+#### 4. アクセス
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:4000
 
 ### 環境変数設定
 
@@ -180,28 +182,38 @@ take2_ai_recipe/
 │   │   ├── types/          # 型定義
 │   │   └── styles/         # スタイル
 │   └── package.json
-└── docker-compose.yml
+└── README.md
 ```
 
 ## トラブルシューティング
 
-### Ollama の設定
+#### Ollama の設定
 Llama 3.1:8b モデルのダウンロードには時間がかかる場合があります：
 
 ```bash
-# Ollama コンテナでモデルを手動ダウンロード
-docker-compose exec ollama ollama pull llama3.1:8b
+# モデルの確認
+ollama list
+
+# モデルの再ダウンロード
+ollama pull llama3.1:8b
+
+# Ollama サービスの確認
+ollama serve
 ```
 
-### MongoDB 接続エラー
-MongoDB コンテナが起動していることを確認：
-
+#### MongoDB 接続エラー
 ```bash
-docker-compose ps
-docker-compose logs mongodb
+# MongoDB サービスの確認
+brew services list | grep mongodb
+
+# MongoDB の再起動
+brew services restart mongodb-community
+
+# 接続テスト
+mongosh
 ```
 
-### Frontend ビルドエラー
+#### Frontend ビルドエラー
 ```bash
 # キャッシュクリア
 cd frontend
