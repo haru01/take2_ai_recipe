@@ -2,61 +2,93 @@
 
 ## 技術スタック
 
-- **Frontend**: React + TypeScript
-- **Styling**: Tailwind CSS
+- **Frontend**: React 18.2.0 + TypeScript 5.3.3
+- **Build Tool**: Vite 5.0.10
+- **Styling**: Tailwind CSS 3.3.7
+- **State Management**: Zustand 4.4.7
+- **HTTP Client**: Axios 1.6.2
+- **Routing**: React Router 6.20.1
+- **WebSocket**: Socket.io-client 4.8.1
 
-
-- **Backend**: Node.js + TypeScript
-- **API**: REST API
-- **LLM**: Llama 3.1:8b (Ollama経由)
-- **Database**: MongoDB (レシピ・フィードバック保存用)
-- **State Management**: Zustand
+- **Backend**: Node.js + TypeScript 5.3.3
+- **Framework**: Express 4.18.2
+- **API**: REST API + WebSocket (Socket.io 4.8.1)
+- **LLM**: Llama 3.1:8b (Ollama 0.5.0経由)
+- **Database**: MongoDB (Mongoose 8.0.3)
+- **Logger**: Winston 3.11.0
+- **Security**: Helmet, CORS, Compression
 
 
 ## システムアーキテクチャ
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│                 │     │                 │     │                 │
 │  React Frontend │────▶│  Node.js API    │────▶│  Llama 3.1:8b   │
-│   (TypeScript)  │◀────│  (TypeScript)   │◀────│   (Ollama)      │
+│   (TypeScript)  │◀────│  (Express)      │◀────│   (Ollama)      │
 │                 │     │                 │     │                 │
+│  ┌─────────────┐│     │  ┌─────────────┐│     │                 │
+│  │ Socket.io   ││◀───▶│  │ Socket.io   ││     │                 │
+│  │ WebSocket   ││     │  │ WebSocket   ││     │                 │
+│  └─────────────┘│     │  └─────────────┘│     │                 │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
                                │
                                ▼
                         ┌─────────────────┐
+                        │    MongoDB      │
+                        │  (Mongoose)     │
                         │                 │
-                        │    Database     │
-                        │  (MongoDB   )   │
-                        │                 │
+                        │ ┌─────────────┐ │
+                        │ │   Recipe    │ │
+                        │ │  Feedback   │ │
+                        │ └─────────────┘ │
                         └─────────────────┘
 ```
+
+### 通信フロー
+
+1. **通常のレシピ生成**: REST API (HTTP)
+2. **ストリーミング生成**: WebSocket (Socket.io)
+3. **リアルタイム進捗表示**: WebSocket双方向通信
+4. **詳細レシピ保存**: MongoDB自動保存
 
 ## Frontend実装（React + TypeScript）
 
 ### ディレクトリ構造
 
 ```
-src/
+frontend/src/
 ├── components/
 │   ├── RecipeInput/
+│   │   ├── RecipeInput.tsx
+│   │   └── StreamingRecipeInput.tsx
 │   ├── ChatDisplay/
 │   ├── RecipeSelection/
+│   │   └── RecipeSelection.tsx
 │   ├── Feedback/
-│   └── RecipeDetail/
+│   │   └── Feedback.tsx
+│   ├── RecipeDetail/
+│   │   └── RecipeDetail.tsx
+│   └── StreamingDisplay/
+│       └── StreamingDisplay.tsx
 ├── hooks/
 │   ├── useRecipeGeneration.ts
+│   ├── useStreamingRecipes.ts
 │   ├── useAutoScroll.ts
-│   └── useFeedback.ts
+│   ├── useFeedback.ts
+│   └── useRecipeDetail.ts
 ├── services/
 │   ├── api.ts
-│   └── recipeService.ts
+│   ├── recipeService.ts
+│   └── websocketService.ts
 ├── types/
 │   ├── recipe.types.ts
 │   └── api.types.ts
 ├── store/
 │   └── recipeStore.ts
-└── App.tsx
+├── styles/
+│   └── globals.css
+├── App.tsx
+└── main.tsx
 ```
 
 ### 主要な型定義
@@ -78,8 +110,13 @@ export interface Recipe {
   title: string;
   description: string;
   cookingTime: number;
+  prepTime: number;
+  totalTime: number;
+  servings: number;
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
   mainIngredients: string[];
   features: string[];
+  tags: string[];
   imageUrl?: string;
 }
 
@@ -90,42 +127,98 @@ export interface RecipeDetail extends Recipe {
   tips: string[];
 }
 
+export interface Ingredient {
+  name: string;
+  amount: string;
+  unit: string;
+  notes?: string;
+}
+
+export interface CookingStep {
+  step: number;
+  instruction: string;
+  duration?: number;
+  tips?: string;
+}
+
+export interface NutritionInfo {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber: number;
+}
+
 export interface Feedback {
   recipeId: string;
   reasons: string[];
   comment?: string;
   futureInterest: 'interested' | 'notInterested' | 'requestChange';
 }
+
+// ストリーミング関連
+export interface StreamingState {
+  classic: 'pending' | 'processing' | 'completed' | 'error';
+  fusion: 'pending' | 'processing' | 'completed' | 'error';
+  healthy: 'pending' | 'processing' | 'completed' | 'error';
+}
+
+export interface StreamingProgress {
+  agentType: 'classic' | 'fusion' | 'healthy';
+  status: 'pending' | 'processing' | 'completed' | 'error';
+  progress: number;
+  content?: Partial<Recipe>;
+  error?: string;
+}
 ```
 
 ### 主要コンポーネント実装例
 
 ```typescript
-// components/RecipeInput/RecipeInput.tsx
-import React, { useState } from 'react';
-import { RecipeInput as RecipeInputType } from '../../types/recipe.types';
+// components/StreamingDisplay/StreamingDisplay.tsx
+import React from 'react';
+import { StreamingProgress } from '../../types/recipe.types';
 
-export const RecipeInput: React.FC<{
-  onSubmit: (input: RecipeInputType) => void;
-}> = ({ onSubmit }) => {
-  const [formData, setFormData] = useState<RecipeInputType>({
-    theme: '',
-    cookingTime: '60min',
-    difficulty: 'intermediate',
-    specialRequests: [],
-    avoidIngredients: '',
-    priority: 'appearance'
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit(formData);
+export const StreamingDisplay: React.FC<{
+  streamingData: StreamingProgress[];
+  isStreaming: boolean;
+}> = ({ streamingData, isStreaming }) => {
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'text-green-600';
+      case 'processing': return 'text-blue-600';
+      case 'error': return 'text-red-600';
+      default: return 'text-gray-400';
+    }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="recipe-input-form">
-      {/* フォーム実装 */}
-    </form>
+    <div className="streaming-display">
+      {streamingData.map((agent) => (
+        <div key={agent.agentType} className="agent-progress mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="font-medium capitalize">{agent.agentType} Chef</span>
+            <span className={getStatusColor(agent.status)}>
+              {agent.status}
+            </span>
+          </div>
+          
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${agent.progress}%` }}
+            />
+          </div>
+          
+          {agent.content && (
+            <div className="mt-2 p-3 bg-gray-50 rounded">
+              <h4 className="font-medium">{agent.content.title}</h4>
+              <p className="text-sm text-gray-600">{agent.content.description}</p>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
 };
 ```
@@ -133,31 +226,67 @@ export const RecipeInput: React.FC<{
 ### カスタムフック例
 
 ```typescript
-// hooks/useRecipeGeneration.ts
-import { useState, useCallback } from 'react';
-import { recipeService } from '../services/recipeService';
-import { RecipeInput, Recipe } from '../types/recipe.types';
+// hooks/useStreamingRecipes.ts
+import { useState, useCallback, useEffect } from 'react';
+import { websocketService } from '../services/websocketService';
+import { RecipeInput, Recipe, StreamingProgress } from '../types/recipe.types';
 
-export const useRecipeGeneration = () => {
+export const useStreamingRecipes = () => {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [streamingData, setStreamingData] = useState<StreamingProgress[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const generateRecipes = useCallback(async (input: RecipeInput) => {
-    setLoading(true);
-    setError(null);
+  useEffect(() => {
+    // WebSocket接続
+    websocketService.connect();
 
-    try {
-      const result = await recipeService.generateRecipes(input);
-      setRecipes(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'エラーが発生しました');
-    } finally {
-      setLoading(false);
-    }
+    // ストリーミング進捗イベント
+    websocketService.onProgress((progress: StreamingProgress) => {
+      setStreamingData(prev => {
+        const updated = [...prev];
+        const index = updated.findIndex(item => item.agentType === progress.agentType);
+        if (index >= 0) {
+          updated[index] = progress;
+        } else {
+          updated.push(progress);
+        }
+        return updated;
+      });
+    });
+
+    // レシピ完成イベント
+    websocketService.onRecipeComplete((recipe: Recipe) => {
+      setRecipes(prev => [...prev, recipe]);
+    });
+
+    // エラーイベント
+    websocketService.onError((error: string) => {
+      setError(error);
+      setIsStreaming(false);
+    });
+
+    return () => {
+      websocketService.disconnect();
+    };
   }, []);
 
-  return { recipes, loading, error, generateRecipes };
+  const generateStreamingRecipes = useCallback((input: RecipeInput) => {
+    setIsStreaming(true);
+    setError(null);
+    setRecipes([]);
+    setStreamingData([]);
+    
+    websocketService.requestStreamingRecipes(input);
+  }, []);
+
+  return { 
+    recipes, 
+    streamingData, 
+    isStreaming, 
+    error, 
+    generateStreamingRecipes 
+  };
 };
 ```
 
@@ -166,14 +295,16 @@ export const useRecipeGeneration = () => {
 ### ディレクトリ構造
 
 ```
-src/
+backend/src/
 ├── controllers/
 │   ├── recipeController.ts
 │   └── feedbackController.ts
 ├── services/
 │   ├── llmService.ts
 │   ├── recipeGenerationService.ts
-│   └── promptService.ts
+│   ├── streamingRecipeGenerationService.ts
+│   ├── promptService.ts
+│   └── websocketService.ts
 ├── models/
 │   ├── Recipe.ts
 │   └── Feedback.ts
@@ -185,9 +316,10 @@ src/
 │   └── validation.ts
 ├── types/
 │   └── index.ts
-├── config/
-│   ├── database.ts
-│   └── ollama.ts
+├── utils/
+│   ├── llmResponseParser.ts
+│   └── logger.ts
+├── config/ (空のディレクトリ)
 └── app.ts
 ```
 
@@ -196,13 +328,13 @@ src/
 ```typescript
 // services/llmService.ts
 import { Ollama } from 'ollama';
+import { logger } from '../utils/logger';
 
 export class LLMService {
   private ollama: Ollama;
 
   constructor() {
     this.ollama = new Ollama({
-      model: 'llama3.1:8b',
       host: process.env.OLLAMA_HOST || 'http://localhost:11434'
     });
   }
@@ -215,14 +347,39 @@ export class LLMService {
         options: {
           temperature: 0.7,
           top_p: 0.9,
-          max_tokens: 1500
+          num_predict: 1500
         }
       });
 
       return response.response;
     } catch (error) {
-      console.error('LLM generation error:', error);
+      logger.error('LLM generation error:', error);
       throw new Error('レシピ生成に失敗しました');
+    }
+  }
+
+  // ストリーミング生成
+  async *generateRecipeStream(prompt: string): AsyncGenerator<string, void, unknown> {
+    try {
+      const stream = await this.ollama.generate({
+        model: 'llama3.1:8b',
+        prompt,
+        stream: true,
+        options: {
+          temperature: 0.7,
+          top_p: 0.9,
+          num_predict: 1500
+        }
+      });
+
+      for await (const chunk of stream) {
+        if (chunk.response) {
+          yield chunk.response;
+        }
+      }
+    } catch (error) {
+      logger.error('LLM streaming error:', error);
+      throw new Error('ストリーミング生成に失敗しました');
     }
   }
 }
@@ -280,46 +437,173 @@ export class PromptService {
 }
 ```
 
-### レシピ生成サービス
+### WebSocketストリーミングサービス
 
 ```typescript
-// services/recipeGenerationService.ts
+// services/streamingRecipeGenerationService.ts
+import { Server as SocketServer } from 'socket.io';
 import { LLMService } from './llmService';
 import { PromptService } from './promptService';
-import { RecipeInput, Recipe } from '../types';
+import { RecipeInput } from '../types';
+import { logger } from '../utils/logger';
+import { LLMResponseParser } from '../utils/llmResponseParser';
 
-export class RecipeGenerationService {
+export class StreamingRecipeGenerationService {
   constructor(
     private llmService: LLMService,
     private promptService: PromptService
   ) {}
 
-  async generateRecipes(input: RecipeInput): Promise<Recipe[]> {
-    const prompts = [
-      this.promptService.generateClassicChefPrompt(input),
-      this.promptService.generateFusionChefPrompt(input),
-      this.promptService.generateHealthyChefPrompt(input)
+  async generateStreamingRecipes(
+    input: RecipeInput, 
+    io: SocketServer, 
+    socketId: string
+  ): Promise<void> {
+    const agents = [
+      { type: 'classic', prompt: this.promptService.generateClassicChefPrompt(input) },
+      { type: 'fusion', prompt: this.promptService.generateFusionChefPrompt(input) },
+      { type: 'healthy', prompt: this.promptService.generateHealthyChefPrompt(input) }
     ];
 
-    // 並列でレシピ生成
-    const responses = await Promise.all(
-      prompts.map(prompt => this.llmService.generateRecipe(prompt))
+    // 並列でストリーミング生成
+    const promises = agents.map(agent => 
+      this.processStreamingAgent(agent, io, socketId)
     );
 
-    // JSONパース&エラーハンドリング
-    return responses.map((response, index) => {
-      try {
-        const parsed = JSON.parse(response);
-        return {
-          ...parsed,
-          id: `recipe-${Date.now()}-${index}`,
-          agentType: ['classic', 'fusion', 'healthy'][index]
-        };
-      } catch (error) {
-        console.error('Parse error:', error);
-        throw new Error('レシピのパースに失敗しました');
+    try {
+      await Promise.all(promises);
+    } catch (error) {
+      logger.error('Streaming generation error:', error);
+      io.to(socketId).emit('streaming-error', 'レシピ生成中にエラーが発生しました');
+    }
+  }
+
+  private async processStreamingAgent(
+    agent: { type: string; prompt: string },
+    io: SocketServer,
+    socketId: string
+  ): Promise<void> {
+    try {
+      // 開始通知
+      io.to(socketId).emit('streaming-progress', {
+        agentType: agent.type,
+        status: 'processing',
+        progress: 0
+      });
+
+      let accumulatedText = '';
+      let progress = 0;
+
+      // ストリーミング生成
+      for await (const chunk of this.llmService.generateRecipeStream(agent.prompt)) {
+        accumulatedText += chunk;
+        progress = Math.min(progress + 5, 95);
+
+        // 進捗更新
+        io.to(socketId).emit('streaming-progress', {
+          agentType: agent.type,
+          status: 'processing',
+          progress,
+          content: this.tryParsePartialRecipe(accumulatedText)
+        });
+      }
+
+      // 完了処理
+      const recipe = LLMResponseParser.parseRecipeResponse(accumulatedText);
+      const finalRecipe = {
+        ...recipe,
+        id: `recipe-${Date.now()}-${agent.type}`,
+        agentType: agent.type
+      };
+
+      io.to(socketId).emit('streaming-progress', {
+        agentType: agent.type,
+        status: 'completed',
+        progress: 100
+      });
+
+      io.to(socketId).emit('recipe-complete', finalRecipe);
+
+    } catch (error) {
+      logger.error(`Agent ${agent.type} error:`, error);
+      io.to(socketId).emit('streaming-progress', {
+        agentType: agent.type,
+        status: 'error',
+        progress: 0,
+        error: 'レシピ生成に失敗しました'
+      });
+    }
+  }
+
+  private tryParsePartialRecipe(text: string): any {
+    try {
+      return LLMResponseParser.parseRecipeResponse(text);
+    } catch {
+      return null;
+    }
+  }
+}
+```
+
+### WebSocketサービス設定
+
+```typescript
+// services/websocketService.ts
+import { Server as HttpServer } from 'http';
+import { Server as SocketServer } from 'socket.io';
+import { StreamingRecipeGenerationService } from './streamingRecipeGenerationService';
+import { LLMService } from './llmService';
+import { PromptService } from './promptService';
+import { logger } from '../utils/logger';
+
+export class WebSocketService {
+  private io: SocketServer;
+  private streamingService: StreamingRecipeGenerationService;
+
+  constructor(httpServer: HttpServer) {
+    this.io = new SocketServer(httpServer, {
+      cors: {
+        origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+        methods: ['GET', 'POST']
       }
     });
+
+    // サービス初期化
+    const llmService = new LLMService();
+    const promptService = new PromptService();
+    this.streamingService = new StreamingRecipeGenerationService(llmService, promptService);
+
+    this.setupEventHandlers();
+  }
+
+  private setupEventHandlers(): void {
+    this.io.on('connection', (socket) => {
+      logger.info(`Client connected: ${socket.id}`);
+
+      // ストリーミングレシピ生成要求
+      socket.on('request-streaming-recipes', async (input) => {
+        logger.info(`Streaming request from ${socket.id}:`, input);
+        
+        try {
+          await this.streamingService.generateStreamingRecipes(
+            input, 
+            this.io, 
+            socket.id
+          );
+        } catch (error) {
+          logger.error('Streaming error:', error);
+          socket.emit('streaming-error', 'レシピ生成に失敗しました');
+        }
+      });
+
+      socket.on('disconnect', () => {
+        logger.info(`Client disconnected: ${socket.id}`);
+      });
+    });
+  }
+
+  public getIO(): SocketServer {
+    return this.io;
   }
 }
 ```
@@ -334,8 +618,13 @@ import { RecipeController } from '../controllers/recipeController';
 const router = Router();
 const recipeController = new RecipeController();
 
+// 通常のレシピ生成
 router.post('/generate', recipeController.generateRecipes);
+
+// レシピ詳細取得
 router.get('/recipe/:id', recipeController.getRecipeDetail);
+
+// フィードバック送信
 router.post('/feedback', recipeController.submitFeedback);
 
 export default router;
@@ -389,48 +678,101 @@ export class LLMResponseParser {
 }
 ```
 
-## デプロイメント構成
+## 実装済み機能
 
-### Docker構成
+### ✅ 完了した機能
+1. **3つのAIエージェント** (Classic、Fusion、Healthy) による並列レシピ生成
+2. **WebSocketストリーミング** によるリアルタイム生成表示
+3. **詳細レシピの事前生成とDB保存** (パフォーマンス改善)
+4. **フィードバックシステム** (ユーザー評価とコメント)
+5. **レスポンシブUI** (Tailwind CSS使用)
+6. **エラーハンドリング** とログ管理 (Winston)
+7. **自動スクロール** とUI状態管理 (Zustand)
 
- * frontend
-   * REACT_APP_API_URL: http://backend:4000
- * backend
- * OLLAMA_HOST: http://ollama:11434
- * DATABASE_URL: mongodb://user:pass@mongodb:27017/recipes
+### 🔧 技術的特徴
+- **ストリーミング機能の切り替え**: UI上でON/OFF可能
+- **進捗表示**: 各エージェントの生成進捗をリアルタイム表示
+- **接続管理**: WebSocket接続の自動再接続機能
+- **セキュリティ**: Helmet、CORS、入力検証
 
+## 環境構成
 
-### 環境変数設定
+### ローカル開発環境
 
 ```env
-# .env.example
-# Backend
+# .env.example (backend)
 NODE_ENV=development
 PORT=4000
-DATABASE_URL=mongodb://user:pass@mongodb:27017/recipes
+DATABASE_URL=mongodb://localhost:27017/recipe-generator
 OLLAMA_HOST=http://localhost:11434
-JWT_SECRET=your-secret-key
+FRONTEND_URL=http://localhost:5173
 
-# Frontend
-REACT_APP_API_URL=http://localhost:4000
-REACT_APP_ENVIRONMENT=development
+# .env.example (frontend)  
+VITE_API_URL=http://localhost:4000
+VITE_WS_URL=http://localhost:4000
 ```
 
-## パフォーマンス最適化
+### 必要なサービス
+1. **MongoDB**: `mongodb://localhost:27017`
+2. **Ollama**: `http://localhost:11434` (Llama 3.1:8b モデル)
+3. **Node.js**: 18.x以上
+4. **npm/yarn**: パッケージ管理
 
-1. **LLM応答の最適化**
-   - ストリーミングレスポンス対応
-   - キャッシュ戦略（類似リクエスト）
-   - バッチ処理の実装
+## 開発・起動手順
 
-2. **フロントエンド最適化**
-   - React.lazy()によるコード分割
-   - useMemoとuseCallbackの適切な使用
-   - 仮想スクロールの実装（レシピリスト）
+### 1. プロジェクトセットアップ
+```bash
+# リポジトリクローン後
+cd take2_ai_recipe
 
-3. **バックエンド最適化**
-   - コネクションプーリング
-   - レスポンスの圧縮
-   - レート制限の実装
+# バックエンド依存関係インストール
+cd backend && npm install
 
-この構成により、スケーラブルで保守性の高い料理レシピ生成システムを実現できます。
+# フロントエンド依存関係インストール  
+cd ../frontend && npm install
+```
+
+### 2. 必要なサービス起動
+```bash
+# MongoDB起動
+mongod
+
+# Ollama起動 (Llama 3.1:8bモデル)
+ollama serve
+ollama run llama3.1:8b
+```
+
+### 3. アプリケーション起動
+```bash
+# バックエンド起動 (ターミナル1)
+cd backend && npm run dev
+
+# フロントエンド起動 (ターミナル2)
+cd frontend && npm run dev
+```
+
+### 4. アクセス
+- **フロントエンド**: http://localhost:5173
+- **バックエンドAPI**: http://localhost:4000
+- **WebSocketエンドポイント**: ws://localhost:4000
+
+## システム特徴
+
+### 🚀 パフォーマンス最適化
+1. **詳細レシピの事前生成**: 選択後すぐに詳細表示
+2. **WebSocketストリーミング**: リアルタイム進捗表示
+3. **並列AI処理**: 3エージェント同時生成
+4. **Vite高速ビルド**: 開発時のホットリロード
+
+### 🛡️ セキュリティ機能
+1. **入力検証**: フロント・バック両方で実装
+2. **CORS設定**: 適切な許可オリジン設定
+3. **ヘッダーセキュリティ**: Helmet使用
+4. **エラーハンドリング**: 詳細ログと安全なエラー表示
+
+### 📊 監視・ログ機能
+1. **Winston構造化ログ**: レベル別ログ出力
+2. **WebSocket接続ログ**: 接続・切断の追跡
+3. **エラートラッキング**: LLM生成エラーの詳細記録
+
+この実装により、プロダクションレディなAI料理レシピ生成システムが構築されています。WebSocketストリーミング機能により、ユーザーは3つのAIエージェントによるレシピ生成過程をリアルタイムで確認でき、優れたUXを提供します。
